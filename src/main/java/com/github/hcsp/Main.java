@@ -11,46 +11,102 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.io.IOException;
+import java.sql.*;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
+@suppress
 public class Main {
+    private static List<String> loadUrlsFromDatabase(Connection connection, String sql) throws SQLException {
+        List<String> results = new ArrayList<>();
+        ResultSet resultSet = null;
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            resultSet = preparedStatement.executeQuery();
+            while (resultSet.next()) {
+                results.add(resultSet.getString("1"));
+            }
+        } finally {
+            if (resultSet != null) {
+                resultSet.close();
+            }
+        }
+        return results;
+    }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws SQLException {
 
-
-        //待处理的链接池
-        List<String> linkpool = new ArrayList<>();
-        //已经处理的链接池
-        Set<String> processedLinks = new HashSet<>();
-        linkpool.add("http://sina.cn");
+        Connection connection = DriverManager.getConnection("jdbc:h2:file:/Users/lx/IdeaProjects/crawler/news", "root", "root");
 
 
         while (true) {
+            //待处理的链接池
+            //从数据库加载待处理的链接池
+            List<String> linkpool = loadUrlsFromDatabase(connection, "select link from LINKS_TO_BE_PROCESSED");
+
+            //已经处理的链接池
+            //从数据库加载已经处理的链接池
+            //   Set<String> processedLinks = new HashSet<>(loadUrlsFromDatabase(connection, "select link from LINKS_ALREADY_PROCESSED"));
+
             if (linkpool.isEmpty()) {
                 break;
             }
+            //arraylist从尾部删除更有效率
+            //每次处理完，更新数据库
+            //从待处理池子拿一个来处理
+            //处理完后从池子和数据库中删除
             String link = linkpool.remove(linkpool.size() - 1);
-            if (processedLinks.contains(link)) {
+            insertLinkIntoDatabase(connection, "delete from LINKS_ALREADY_PROCESSED where link = ?", link);
+            //询问数据库，当前链接是否已经处理过
+            if (isLinkProcessed(connection, link)) {
                 continue;
             }
             //不感兴趣 不处理
             if (isInterestingLink(link)) {
                 Document doc = httpGetAndParseHtml(link);
 
-                doc.select("a").stream().map(aTag -> aTag.attr("href")).forEach(linkpool::add);
+                parseUrlsFromPageAndStoreIntoDatabase(connection, link, doc);
 
                 storeIntoDatabaseIfItIsNewsPage(doc);
-            } else {
-                continue;
+
+                insertLinkIntoDatabase(connection, "insert into LINKS_ALREADY_PROCESSED (link) values (?)", link);
+
+
             }
-            processedLinks.add(link);
         }
 
 
     }
+
+    private static void parseUrlsFromPageAndStoreIntoDatabase(Connection connection, String link, Document doc) throws SQLException {
+        for (Element aTag : doc.select("a")) {
+            String href = aTag.attr("href");
+            insertLinkIntoDatabase(connection, "insert into LINKS_TO_BE_PROCESSED (link) values (?)", link);
+        }
+    }
+
+    private static boolean isLinkProcessed(Connection connection, String link) throws SQLException {
+        ResultSet resultSet = null;
+        try (PreparedStatement preparedStatement = connection.prepareStatement("select link from LINKS_ALREADY_PROCESSED where link = ?")) {
+            preparedStatement.setString(1, link);
+            resultSet = preparedStatement.executeQuery();
+            while (resultSet.next()) {
+                return true;
+            }
+        } finally {
+            if (resultSet != null) {
+                resultSet.close();
+            }
+        }
+        return false;
+    }
+
+    private static void insertLinkIntoDatabase(Connection connection, String sql, String link) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            preparedStatement.setString(1, link);
+            preparedStatement.executeUpdate();
+        }
+    }
+
 
     private static void storeIntoDatabaseIfItIsNewsPage(Document doc) {
         ArrayList<Element> articleTags = doc.select("article");
