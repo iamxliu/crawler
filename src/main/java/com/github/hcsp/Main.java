@@ -15,19 +15,16 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-@suppress
+
 public class Main {
+
+    private static final String USER_NAME = "root";
+    private static final String PASSWORD = "root";
     private static List<String> loadUrlsFromDatabase(Connection connection, String sql) throws SQLException {
         List<String> results = new ArrayList<>();
-        ResultSet resultSet = null;
-        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
-            resultSet = preparedStatement.executeQuery();
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql); ResultSet resultSet = preparedStatement.executeQuery()) {
             while (resultSet.next()) {
-                results.add(resultSet.getString("1"));
-            }
-        } finally {
-            if (resultSet != null) {
-                resultSet.close();
+                results.add(resultSet.getString(1));
             }
         }
         return results;
@@ -35,27 +32,26 @@ public class Main {
 
     public static void main(String[] args) throws SQLException {
 
-        Connection connection = DriverManager.getConnection("jdbc:h2:file:/Users/lx/IdeaProjects/crawler/news", "root", "root");
+        Connection connection = DriverManager.getConnection("jdbc:h2:file:/Users/lx/IdeaProjects/crawler/news", USER_NAME, PASSWORD);
 
 
         while (true) {
             //待处理的链接池
             //从数据库加载待处理的链接池
-            List<String> linkpool = loadUrlsFromDatabase(connection, "select link from LINKS_TO_BE_PROCESSED");
+            List<String> linkPool = loadUrlsFromDatabase(connection, "select link from LINKS_TO_BE_PROCESSED");
 
             //已经处理的链接池
             //从数据库加载已经处理的链接池
-            //   Set<String> processedLinks = new HashSet<>(loadUrlsFromDatabase(connection, "select link from LINKS_ALREADY_PROCESSED"));
 
-            if (linkpool.isEmpty()) {
+            if (linkPool.isEmpty()) {
                 break;
             }
             //arraylist从尾部删除更有效率
             //每次处理完，更新数据库
             //从待处理池子拿一个来处理
             //处理完后从池子和数据库中删除
-            String link = linkpool.remove(linkpool.size() - 1);
-            insertLinkIntoDatabase(connection, "delete from LINKS_ALREADY_PROCESSED where link = ?", link);
+            String link = linkPool.remove(linkPool.size() - 1);
+            insertLinkIntoDatabase(connection, "DELETE FROM LINKS_TO_BE_PROCESSED where link = ?", link);
             //询问数据库，当前链接是否已经处理过
             if (isLinkProcessed(connection, link)) {
                 continue;
@@ -64,11 +60,12 @@ public class Main {
             if (isInterestingLink(link)) {
                 Document doc = httpGetAndParseHtml(link);
 
-                parseUrlsFromPageAndStoreIntoDatabase(connection, link, doc);
+                parseUrlsFromPageAndStoreIntoDatabase(connection, doc);
 
                 storeIntoDatabaseIfItIsNewsPage(doc);
 
-                insertLinkIntoDatabase(connection, "insert into LINKS_ALREADY_PROCESSED (link) values (?)", link);
+
+                insertLinkIntoDatabase(connection, "INSERT INTO LINKS_ALREADY_PROCESSED (link) values (?)", link);
 
 
             }
@@ -77,10 +74,17 @@ public class Main {
 
     }
 
-    private static void parseUrlsFromPageAndStoreIntoDatabase(Connection connection, String link, Document doc) throws SQLException {
+    private static void insertLinkIntoDatabase(Connection connection, String sql, String link) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
+            preparedStatement.setString(1, link);
+            preparedStatement.executeUpdate();
+        }
+    }
+
+    private static void parseUrlsFromPageAndStoreIntoDatabase(Connection connection, Document doc) throws SQLException {
         for (Element aTag : doc.select("a")) {
             String href = aTag.attr("href");
-            insertLinkIntoDatabase(connection, "insert into LINKS_TO_BE_PROCESSED (link) values (?)", link);
+            insertLinkIntoDatabase(connection, "insert into LINKS_TO_BE_PROCESSED (link) values (?)", href);
         }
     }
 
@@ -98,13 +102,6 @@ public class Main {
             }
         }
         return false;
-    }
-
-    private static void insertLinkIntoDatabase(Connection connection, String sql, String link) throws SQLException {
-        try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
-            preparedStatement.setString(1, link);
-            preparedStatement.executeUpdate();
-        }
     }
 
 
@@ -148,7 +145,7 @@ public class Main {
     }
 
     private static boolean isIndexPage(String link) {
-        return "http://sina.cn".equals(link);
+        return "https://sina.cn".equals(link);
     }
 
     private static boolean isNotLoginPage(String link) {
