@@ -60,6 +60,7 @@ public class Main {
             if (isInterestingLink(link)) {
                 Document doc = httpGetAndParseHtml(link);
 
+
                 parseUrlsFromPageAndStoreIntoDatabase(connection, doc);
 
                 storeIntoDatabaseIfItIsNewsPage(doc);
@@ -69,10 +70,12 @@ public class Main {
 
 
             }
+
         }
 
 
     }
+
 
     private static void insertLinkIntoDatabase(Connection connection, String sql, String link) throws SQLException {
         try (PreparedStatement preparedStatement = connection.prepareStatement(sql)) {
@@ -103,6 +106,7 @@ public class Main {
         }
         return false;
     }
+
 
 
     private static void storeIntoDatabaseIfItIsNewsPage(Document doc) {
@@ -145,7 +149,9 @@ public class Main {
     }
 
     private static boolean isIndexPage(String link) {
+
         return "https://sina.cn".equals(link);
+
     }
 
     private static boolean isNotLoginPage(String link) {
